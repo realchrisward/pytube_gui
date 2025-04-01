@@ -1,4 +1,4 @@
-from pytube import YouTube
+from pytubefix import YouTube
 from PyQt6 import QtWidgets, uic, QtCore
 import sys
 import ffmpeg
@@ -102,8 +102,12 @@ class MainWindow(QtWidgets.QMainWindow):
         print('downloading video')  
         self.action_audio_download()
         self.action_video_download()
-        input_audio = ffmpeg.input(os.path.join(self.output_path, "audio_"+self.filename_lineEdit.text()))
-        input_video = ffmpeg.input(os.path.join(self.output_path, "video_"+self.filename_lineEdit.text()))
+        audio_path = os.path.join(self.output_path, "audio_"+self.filename_lineEdit.text())
+        video_path = os.path.join(self.output_path, "video_"+self.filename_lineEdit.text())
+        print(f"audio_path: {audio_path}\n{os.path.exists(audio_path)}")
+        print(f"video_path: {video_path}\n{os.path.exists(video_path)}")
+        input_audio = ffmpeg.input(audio_path)
+        input_video = ffmpeg.input(video_path)
         ffmpeg.concat(input_video, input_audio, v=1, a=1).output(os.path.join(self.output_path,self.filename_lineEdit.text())).run()
         self.status_pushButton.setText('Ready')
 
