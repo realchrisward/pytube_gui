@@ -86,6 +86,7 @@ class DownloadWorker(QThread):
                 ydl.download([self.url])
         except Exception as e:
             self.error.emit(str(e))
+        self.logger.info("finished")
 
 
 class MainWindow(QMainWindow):
@@ -149,6 +150,16 @@ class MainWindow(QMainWindow):
                         f"Downloading: {percent} | {d.get('_speed_str', '?')} | ETA {d.get('_eta_str', '?')}"
                     )
 
+    def postprocessor_hook(self,d):
+        status = d.get("status")
+
+        if status == "started":
+            self.logger.info(f"Post-processing started: {d.get('postprocessor')}")
+        elif status == "processing":
+            self.logger.info(f"Post-processing: {d.get('postprocessor')}")
+        elif status == "finished":
+            self.logger.info("Post-processing finished")
+
     def action_download(self):
         self.logger.info(f"downloading: {self.lineEdit_youtube_url.text()}")
 
@@ -186,7 +197,8 @@ class MainWindow(QMainWindow):
                     }
                 ],
                 "noplaylist": True,
-                'progress_hooks': [self.my_hook],   
+                'progress_hooks': [self.my_hook], 
+                'postprocessor_hooks': [self.postprocessor_hook],  
             }
         else: 
             # Options dictionary
@@ -196,6 +208,7 @@ class MainWindow(QMainWindow):
                 'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'), # Output template
                 'noplaylist': True,                  # Only download the single video, not the whole playlist
                 'progress_hooks': [self.my_hook],         # Add a progress hook for custom behavior (optional, see below)
+                'postprocessor_hooks': [self.postprocessor_hook],  
                 "postprocessors": [
                     {
                         "key": "FFmpegVideoConvertor",
