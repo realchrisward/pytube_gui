@@ -1,0 +1,23 @@
+[project]
+name = "pytube_gui"
+dynamic = [
+  "version",
+]
+dependencies = [
+  "ffmpeg-python",
+  "pyside6",
+  "yt-dlp"
+]
+
+requires-python = ">= 3.13"
+maintainers = [
+  {name = "Chris Ward", email = "ward.chris.s@gmail.com"}
+]
+readme = "README.md"
+license = {file = "LICENSE.txt"}
+keywords = ["youtube"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python"
+]
+

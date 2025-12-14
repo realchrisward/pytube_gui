@@ -1,125 +1,228 @@
-from pytubefix import YouTube
-from PyQt6 import QtWidgets, uic, QtCore
-import sys
+
+__version__ = "0.2.0"
+__program_name__ = "Youtube Downloader Helper"
+
+from PySide6.QtCore import QFile, QObject, QThread, Signal
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
 import ffmpeg
+import logging
 import os
+from pathlib import Path
+import sys
+import yt_dlp
+
+class LogEmitter(QObject):
+    """
+    LogEmitter is used by QTextEditLogger to enable access to
+    QObject Signal for emitting to and
+    """
+
+    log = Signal(str)
 
 
+class QTextEditLogger(logging.Handler):
+    """
+    QTextEditLogger serves as a logging handler to display logging messages
+    within the GUI if running the client in interactive mode
+    """
 
+    def __init__(self, text_edit_widget):
+        super().__init__()
+        self.widget = text_edit_widget
+        self.widget.setReadOnly(True)
+        self.widget.setStyleSheet("background-color: lightgray;")
 
-class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        uic.loadUi("pytube_gui.ui",self)
-        self.reset_gui()
+        self.log_emitter = LogEmitter()
+        self.log_emitter.log.connect(self.widget.insertHtml)
 
-
-    def reset_gui(self):
-        self.yt_url = ""
-        # self.yt_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        self.youtube_video_url_lineEdit.setText(self.yt_url)
-        self.vid_options = []
-        self.aud_options = []
-        self.prog_options = []
-        self.action_load()
-        
-        self.load_pushButton.clicked.connect(self.action_load)
-        self.reset_pushButton.clicked.connect(self.reset_gui)
-        self.progressive_download_pushButton.clicked.connect(self.action_prog_download)
-        self.audio_only_pushButton.clicked.connect(self.action_audio_download)
-        self.video_only_pushButton.clicked.connect(self.action_video_download)
-        self.video_and_audio_pushButton.clicked.connect(self.action_audio_video_download)
-
-
-    def action_load(self):
-        self.yt_url = self.youtube_video_url_lineEdit.text()
-        if self.yt_url == "":
-            return
+    def emit(self, record):
+        msg = self.format(record)
+        # color code messages
+        if "| INFO |" in msg:
+            msg = f'<span style="color:black">{msg}</span><br>'
+        elif "| DEBUG |" in msg:
+            msg = f'<span style="color:green">{msg}</span><br>'
+        elif "| WARNING |" in msg:
+            msg = f'<span style="color:red">{msg}</span><br>'
+        elif "| ERROR |" in msg:
+            msg = f'<span style="color:red"><strong>{msg}</strong></span><br>'
         else:
-            try:
-                print('starting')
-                #self.yt = YouTube(self.yt_url, use_oauth=True, allow_oauth_cache=True)
-                self.yt = YouTube(self.yt_url, use_oauth=True, allow_oauth_cache=True)
-                print('object created')
-                self.timer = QtCore.QTimer(self)
-                self.timer.setSingleShot(True)
-                self.timer.timeout.connect(self.action_continue_load)
-                self.timer.start(1000)
-
-            except:
-                return
-
-    def action_continue_load(self):
-            print('...more loading...')
-            print(f'{self.yt.streams.count} - streams')
-            print('filtering streams')
-            self.prog_options = self.yt.streams.filter(progressive=True)
-            self.vid_options = self.yt.streams.filter(only_video=True)
-            self.aud_options = self.yt.streams.filter(only_audio=True)
-            print('getting suggested filename')
-            self.filename = self.yt.streams[0].default_filename
-            self.filename_lineEdit.setText(self.filename)
-            print('preparing combobox')
-            self.video_options_comboBox.clear()
-            self.audio_options_comboBox.clear()
-            self.progressive_options_comboBox.clear()
-
-            self.video_options_comboBox.addItems([f'{i.itag}: {i.resolution} x {i.fps}fps, {i.codecs}' for i in self.vid_options])
-            self.audio_options_comboBox.addItems([f'{i.itag}: {i.abr}, {i.codecs}' for i in self.aud_options])
-            self.progressive_options_comboBox.addItems([f'{i.itag}: {i.resolution} x {i.fps}fps, {i.codecs}' for i in self.prog_options])
-
-
-    def action_prog_download(self):
-        self.status_pushButton.setText('...Busy...')
-        self.filename = self.filename_lineEdit.text()
-        self.output_path = self.output_path_lineEdit.text()
-        self.selected_stream = self.yt.streams.get_by_itag(self.progressive_options_comboBox.currentText().split(':')[0])
-        self.selected_stream.download(output_path = self.output_path, filename = self.filename)
-        self.status_pushButton.setText('Ready')
-
-
-    def action_video_download(self):
-        self.status_pushButton.setText('...Busy...')
-        self.filename = "video_"+self.filename_lineEdit.text()
-        self.output_path = self.output_path_lineEdit.text()
-        self.selected_stream = self.yt.streams.get_by_itag(self.video_options_comboBox.currentText().split(':')[0])
-        self.selected_stream.download(output_path = self.output_path, filename = self.filename)
-        self.status_pushButton.setText('Ready')
-
-
-    def action_audio_download(self):
-        self.status_pushButton.setText('...Busy...')
-        print('downloading audio')
-        self.filename = "audio_"+self.filename_lineEdit.text()
-        self.output_path = self.output_path_lineEdit.text()
-        self.selected_stream = self.yt.streams.get_by_itag(self.audio_options_comboBox.currentText().split(':')[0])
-        self.selected_stream.download(output_path = self.output_path, filename = self.filename)
-        self.status_pushButton.setText('Ready')
-
-
-    def action_audio_video_download(self):
-        self.status_pushButton.setText('...Busy...')
-        print('downloading video')  
-        self.action_audio_download()
-        self.action_video_download()
-        audio_path = os.path.join(self.output_path, "audio_"+self.filename_lineEdit.text())
-        video_path = os.path.join(self.output_path, "video_"+self.filename_lineEdit.text())
-        print(f"audio_path: {audio_path}\n{os.path.exists(audio_path)}")
-        print(f"video_path: {video_path}\n{os.path.exists(video_path)}")
-        input_audio = ffmpeg.input(audio_path)
-        input_video = ffmpeg.input(video_path)
-        ffmpeg.concat(input_video, input_audio, v=1, a=1).output(os.path.join(self.output_path,self.filename_lineEdit.text())).run()
-        self.status_pushButton.setText('Ready')
-
-
+            msg = f'<span style="color:black"><strong>{msg}</strong></span><br>'
+        self.log_emitter.log.emit(msg)
+        self.widget.verticalScrollBar().setSliderPosition(
+            self.widget.verticalScrollBar().maximum()
+        )
 
 def main():
-    app = QtWidgets.QApplication(sys.argv)
+    loader = QUiLoader()
+    global app
+    app = QApplication()
 
-    window = MainWindow()
-    window.show()
+    ui_file = QFile(os.path.join(os.path.dirname(__file__), "main_gui.ui"))
+    ui = loader.load(ui_file)
 
-    app.exec()
+    window = MainWindow(__program_name__+__version__, ui, app)
+    window.ui.show()
+    print("running")
+    exit_code = app.exec()
+    print(window.exit_status)
+        
+    sys.exit(exit_code)
+
+
+class DownloadWorker(QThread):
+    error = Signal(str)
+
+    def __init__(self, ydl_opts, url, logger):
+        super().__init__()
+        self.ydl_opts = ydl_opts
+        self.url = url
+        self.logger = logger
+
+    def run(self):
+        try:
+            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+                ydl.download([self.url])
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, version, ui,  app):
+        super().__init__()
+        
+        self.app = app
+        self.ui = ui 
+        self.version = version
+
+        self.exit_status = "running"
+
+        # migrate ui children to parent level of class
+        # !!! note this creates some odd behavior when closing the window
+        # calls to self.close will not succeed, but self.ui.close will
+        # it looks like not all of the attributes/methods are linked, some are 
+        # pseudo copied.
+        for att, val in ui.__dict__.items():
+            setattr(self, att, val)
+
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
+        self.logging_format = logging.Formatter(
+            "%(asctime)s | %(name)s | %(levelname)s | %(message)s\n"
+        )
+        self.logging_text_browser = QTextEditLogger(self.textEdit_status_window)
+        self.logging_text_browser.setFormatter(self.logging_format)
+        self.logging_text_browser.setLevel(logging.DEBUG)
+        self.logger.addHandler(self.logging_text_browser)
+
+        # test logging output
+        self.logger.debug(version)
+
+        self.setWindowTitle(f"{self.version}")
+        self.label_window_title.setText(f"{version}")
+
+        self.pushButton_reset.clicked.connect(self.action_reset)
+        self.pushButton_download.clicked.connect(self.action_download)
+        self.pushButton_output_path.clicked.connect(self.action_output_path)
+
+    def action_output_path(self):
+        self.label_output_path.setText(
+            QFileDialog.getExistingDirectory(self, "select output directory", str(Path.home()))
+        )
+        self.logger.info(self.label_output_path.text())
+
+
+    def action_reset(self):
+        self.lineEdit_youtube_url.setText("")
+        self.label_output_path.setText("")
+        self.logger.info("--RESET--")
+        
+    def my_hook(self, d):
+            if d['status'] == 'finished':
+                self.logger.info(f"Done downloading {Path(d['filename']).name}")
+            elif d['status'] == 'downloading':
+                percent = d.get('_percent_str', '').strip()
+                if percent != self._last_percent:
+                    self._last_percent = percent
+                    self.logger.info(
+                        f"Downloading: {percent} | {d.get('_speed_str', '?')} | ETA {d.get('_eta_str', '?')}"
+                    )
+
+    def action_download(self):
+        self.logger.info(f"downloading: {self.lineEdit_youtube_url.text()}")
+
+        if self.lineEdit_youtube_url.text() == "":
+            self.logger.error("no url proveded - Aborting...")
+            return
+        
+        # Define the URL of the video you want to download
+        video_url = self.lineEdit_youtube_url.text()
+        # Define the directory where you want to save the file
+        if self.label_output_path == "":
+            self.logger.error("no save location provided - Aborting...")
+            return
+        save_path = self.label_output_path.text()
+
+        # Ensure the download directory exists
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        # Optional: A function to monitor download progress
+        self._last_percent = None
+
+        
+
+
+        if self.checkBox_audio_only.isChecked():
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": "%(title)s.%(ext)s",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "0",
+                    }
+                ],
+                "noplaylist": True,
+                'progress_hooks': [self.my_hook],   
+            }
+        else: 
+            # Options dictionary
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio/best', # Select best quality video and audio
+                'merge_output_format': 'mp4',        # Merge into an mp4 file (requires FFmpeg)
+                'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'), # Output template
+                'noplaylist': True,                  # Only download the single video, not the whole playlist
+                'progress_hooks': [self.my_hook],         # Add a progress hook for custom behavior (optional, see below)
+                "postprocessors": [
+                    {
+                        "key": "FFmpegVideoConvertor",
+                        "preferedformat": "mp4",
+                    }
+                ],
+                "postprocessor_args": [
+                        "-c:v", "copy",      # Do NOT re-encode video
+                        "-c:a", "aac",       # Convert audio to AAC
+                        "-b:a", "192k",      # High-quality audio bitrate
+                    ],
+            }
+
+
+        # Run the downloader
+
+        self.worker = DownloadWorker(ydl_opts, video_url, self.logger)
+        self.worker.error.connect(lambda e: self.logger.error(e))
+        self.worker.start()
+        # try:
+        #     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        #         ydl.download([video_url])
+        # except Exception as e:
+        #     self.logger.error(f"\nAn error occurred: {e}")
+
+
 
 if __name__ == "__main__":
     main()
+
